@@ -13,7 +13,7 @@ new_master=$2
 trigger_file=$3
 
 # Do nothing if standby goes down.
-if [ $failed_node = 1 ]; then
+if [ $failed_node != 0 ]; then
     exit 0;
 fi
 

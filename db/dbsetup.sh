@@ -20,6 +20,7 @@
 # 1. 首先设置好服务器的IP地址等 
 # 2. 使用本脚本前需要设置好hosts：db1/db2
 # 3. pgpool 3.3需要事先手工安装好 aptitude install gcc make postgresql-server-dev-9.1; ./configure; make; make install
+# 4. 设置好db1/db2的无密码访问
 #
 
 if [ $# -ne 5 ]
