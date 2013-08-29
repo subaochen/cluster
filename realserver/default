@@ -1,0 +1,26 @@
+
+server {
+    listen   80; ## listen for ipv4
+    listen   [::]:80 default ipv6only=on; ## listen for ipv6
+
+    server_name  localhost;
+    client_max_body_size       100m;
+
+    root /var/www;
+
+    # for images
+    location /imgs {
+        index index.html;
+    }
+
+    # for javascript
+    location /js {
+        index index.html;
+    }
+
+    location / {
+        proxy_pass http://jboss;
+    }
+    
+}
+
