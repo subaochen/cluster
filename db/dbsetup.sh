@@ -39,10 +39,12 @@ SLAVE_HOST_IP=$4
 VIP=$5
 MASTER=$6
 RECOVERY_CONF="recovery.conf"
+# 初始情况下conn host为slave host，当配置slave host的时候需要设置为master host
 CONN_HOST=$SLAVE_HOST
+TRIGGER_FILE="/tmp/pgsql.trigger.file"
 
 # 删除可能的遗留文件
-rm -f /tmp/pgsql.trigger.file
+rm -f $TRIGGER_FILE
 rm -f /var/lib/postgresql/9.1/main/recovery.*
 
 # 使用更合适的软件源
@@ -141,7 +143,7 @@ fi
 cat > /var/lib/postgresql/9.1/main/${RECOVERY_CONF} << RECOVERY.CONF
 standby_mode=on
 primary_conninfo='host=$CONN_HOST'
-trigger_file='/tmp/pgsql.trigger.file'
+trigger_file='$TRIGGER_FILE'
 recovery_target_timeline='latest'
 RECOVERY.CONF
 
@@ -306,7 +308,7 @@ health_check_retry_delay = 1
 # FAILOVER AND FAILBACK
 #------------------------------------------------------------------------------
 
-failover_command = '/usr/local/bin/failover_stream.sh %d %H /tmp/pgsql.trigger.file'
+failover_command = '/usr/local/bin/failover_stream.sh %d %H $TRIGGER_FILE'
 fail_over_on_backend_error = on
 search_primary_node_timeout = 10
 
