@@ -20,22 +20,30 @@
 # 1. 首先设置好服务器的IP地址等 
 # 2. 使用本脚本前需要设置好hosts：db1/db2
 # 3. pgpool 3.3需要事先手工安装好 aptitude install gcc make postgresql-server-dev-9.1; ./configure; make; make install
+# 4. 服务器之间需要设置好无密码访问
 #
 
-if [ $# -ne 4 ]
+if [ $# -ne 6 ]
 then
     echo "usage:"
-    echo "director.sh this_host other_host VIP master[1|0]"
+    echo "director.sh master_host master_host_ip slave_host slaver_host_ip VIP master[1|0]"
     exit 1
 fi
 export LANG=C
 export LC_ALL=C
 
-THIS_HOST=$1
-OTHER_HOST=$2
-VIP=$3
-MASTER=$4
+MASTER_HOST=$1
+MASTER_HOST_IP=$2
+SLAVE_HOST=$3
+SLAVE_HOST_IP=$4
+VIP=$5
+MASTER=$6
+RECOVERY_CONF="recovery.conf"
+CONN_HOST=$SLAVE_HOST
 
+# 删除可能的遗留文件
+rm -f /tmp/pgsql.trigger.file
+rm -f /var/lib/postgresql/9.1/main/recovery.*
 
 # 使用更合适的软件源
 if [ -f /etc/apt/sources.list ]; then 
@@ -63,53 +71,86 @@ if [ $MASTER -eq 0 ]; then
     service postgresql stop
 fi
 
-# 设置postgres用户的密码
-passwd postgres
-
-# 设置服务器之间的无密码访问
-su - postgres -c "ssh-keygen"
-su - postgres -c "ssh-copy-id postgres@$OTHER_HOST"
 
 # 时间同步
 service ntp stop
 ntpdate cn.pool.ntp.org
 service ntp start
 
-# 设置服务器之间的无密码访问
-su - postgres -c "ssh-keygen"
-su - postgres -c "ssh-copy-id postgres@$OTHER_HOST"
-
 # 构造集群配置文件
 # TODO 如何根据服务器配置修改postgresql.conf中的参数？
+# pg_hba.conf需要根据网络灵活设置
 if [ -f /etc/postgresql/9.1/main/pg_hba.conf ]; then
     mv /etc/postgresql/9.1/main/pg_hba.conf /etc/postgresql/9.1/main/pg_hba.conf.bak
 fi
-cp -f pg_hba.conf /etc/postgresql/9.1/main/pg_hba.conf
+
+cat > /etc/postgresql/9.1/main/pg_hba.conf << PGHBA
+local   all             postgres                                trust
+local   all             all                                     trust
+host    all             all             127.0.0.1/32            trust
+host    all             all             $VIP/32                 trust
+host    all             all             $MASTER_HOST_IP/32        trust
+host    all             all             $SLAVE_HOST_IP/32       trust
+local   replication     postgres                                trust
+host    replication     postgres        127.0.0.1/32            trust
+host    replication     postgres        ::1/128                 trust
+host    replication     postgres        ::1/128                 trust
+host    replication     postgres        $VIP/32                 trust
+host    replication     postgres        $MASTER_HOST_IP/32        trust
+host    replication     postgres        $SLAVE_HOST_IP/32       trust
+
+PGHBA
+
+if [ -f /usr/local/bin/failover_stream.sh ]; then
+    mv /usr/local/bin/failover_stream.sh /usr/local/bin/failover_stream.sh.bak
+fi
+cp -f failover_stream.sh /usr/local/bin/
 
 if [ -f /etc/postgresql/9.1/main/postgresql.conf ]; then
     mv /etc/postgresql/9.1/main/postgresql.conf /etc/postgresql/9.1/main/ppostgresql.conf.bak
 fi
 cp -f postgresql.conf /etc/postgresql/9.1/main/postgresql.conf
 
-cp -f pgpool_remote_start basebackup.sh recovery.conf /var/lib/postgresql/9.1/main
-mv /var/lib/postgresql/9.1/main/recovery.conf /var/lib/postgresql/9.1/main/recovery.done
+# 如果是从服务器则需要根据master建立数据库基础数据
+if [ $MASTER -eq 0 ]; then
+    rm -rf /var/lib/postgresql/9.1/main/*
+    su - postgres -c "/usr/lib/postgresql/9.1/bin/pg_basebackup -w -Fp -x -v -D /var/lib/postgresql/9.1/main -h $MASTER_HOST"
+fi
+
+cp -f pgpool_remote_start basebackup.sh  /var/lib/postgresql/9.1/main
 
 if [ ! -d /var/lib/postgresql/9.1/main/archive ]; then
     mkdir /var/lib/postgresql/9.1/main/archive
 fi
-chown postgres.postgres /var/lib/postgresql/9.1/main/recovery.done
 chown postgres.postgres /var/lib/postgresql/9.1/main/pgpool_remote_start
 chown postgres.postgres /var/lib/postgresql/9.1/main/basebackup.sh
 chown postgres.postgres /var/lib/postgresql/9.1/main/archive
 chown postgres.postgres /etc/postgresql/9.1/main/pg_hba.conf
 chown postgres.postgres /etc/postgresql/9.1/main/postgresql.conf
 
-# TODO 根据master/slave具体情况重新写recovery.conf文件，主要是conninfo中的dbname
+# 根据master/slave具体情况重新写recovery.conf文件，主要是conninfo中的dbname
+rm -f /var/lib/postgresql/9.1/main/recovery.*
+if [ $MASTER -eq 1 ]; then
+    RECOVERY_CONF="recovery.done"
+fi
 
-# 如果是从服务器则需要根据master建立数据库基础数据
 if [ $MASTER -eq 0 ]; then
-    su - postgres -c "/usr/lib/postgresql/9.1/bin/pg_basebackup -w -Fp -x -v -D /var/lib/postgresql/9.1/main -h $OTHER_HOST"
-    mv /var/lib/postgresql/9.1/main/recovery.done /var/lib/postgresql/9.1/main/recovery.conf
+    CONN_HOST=$MASTER_HOST
+fi
+
+cat > /var/lib/postgresql/9.1/main/${RECOVERY_CONF} << RECOVERY.CONF
+standby_mode=on
+primary_conninfo='host=$CONN_HOST'
+trigger_file='/tmp/pgsql.trigger.file'
+recovery_target_timeline='latest'
+RECOVERY.CONF
+
+chown postgres.postgres /var/lib/postgresql/9.1/main/recovery.*
+
+if [ $MASTER -eq 0 ]; then
+    rm -f /var/lib/postgresql/9.1/main/server.*
+    ln -s /etc/ssl/certs/ssl-cert-snakeoil.pem /var/lib/postgresql/9.1/main/server.crt
+    ln -s /etc/ssl/private/ssl-cert-snakeoil.key /var/lib/postgresql/9.1/main/server.key
 fi
 
 service postgresql restart
@@ -119,6 +160,14 @@ service postgresql restart
 if [ -f /usr/local/etc/pgpool.conf ]; then
     mv /usr/local/etc/pgpool.conf /usr/local/etc/pgpool.conf.bak;
 fi
+
+WD_HOST=$MASTER_HOST
+WD_DEST=$SLAVE_HOST
+if [ $MASTER -eq 0 ]; then
+    WD_HOST=$SLAVE_HOST
+    WD_DEST=$MASTER_HOST
+fi
+
 cat > /usr/local/etc/pgpool.conf << PGPOOL.CONF
 
 listen_addresses = '*'
@@ -126,12 +175,12 @@ port = 9999
 socket_dir = '/var/run/postgresql'
 pcp_port = 9898
 pcp_socket_dir = '/var/run/postgresql'
-backend_hostname0 = '$THIS_HOST'
+backend_hostname0 = '$MASTER_HOST'
 backend_port0 = 5432
 backend_weight0 = 1
 backend_data_directory0 = '/var/lib/postgresql/9.1/main'
 backend_flag0 = 'ALLOW_TO_FAILOVER'
-backend_hostname1 = '$OTHER_HOST'
+backend_hostname1 = '$SLAVE_HOST'
 backend_port1 = 5432
 backend_weight1 = 1
 backend_data_directory1 = '/var/lib/postgresql/9.1/main'
@@ -171,7 +220,7 @@ log_standby_delay = 'none'
 syslog_facility = 'LOCAL0'
 syslog_ident = 'pgpool'
 # - Debug -
-debug_level = 0
+debug_level = 10
 
 
 #------------------------------------------------------------------------------
@@ -281,7 +330,7 @@ client_idle_limit_in_recovery = 0
 use_watchdog = on
 trusted_servers = ''
 ping_path = '/bin'
-wd_hostname = '$THIS_HOST'
+wd_hostname = '$WD_HOST'
 wd_port = 9000
 wd_authkey = ''
 delegate_IP = '$VIP'
@@ -305,10 +354,10 @@ wd_interval = 10
 wd_heartbeat_port = 9694
 wd_heartbeat_keepalive = 2
 wd_heartbeat_deadtime = 30
-heartbeat_destination0 = '$THIS_HOST'
+heartbeat_destination0 = '$MASTER_HOST'
 heartbeat_destination_port0 = 9694 
 heartbeat_device0 = 'eth0'
-heartbeat_destination1 = '$OTHER_HOST'
+heartbeat_destination1 = '$SLAVE_HOST'
 heartbeat_destination_port1 = 9694
 heartbeat_device1 = 'eth0'
 
@@ -321,7 +370,7 @@ wd_lifecheck_user = 'postgres'
 wd_lifecheck_password = '111111'
 
 # - Other pgpool Connection Settings -
-other_pgpool_hostname0 = '$OTHER_HOST'
+other_pgpool_hostname0 = '$WD_DEST'
 other_pgpool_port0 = 9999
 other_wd_port0 = 9000
 
@@ -360,7 +409,15 @@ update-rc.d pgpool2 defaults
 
 service pgpool2 start
 
-echo "waiting for pgpool up..."
-sleep 10s
+echo "waiting about 60s for pgpool up..."
+sleep 60s
+
+if [ $MASTER -eq 1 ]; then
+    pcp_attach_node -d 5 localhost 9898 postgres postgres 0
+fi
+
+if [ $MASTER -eq 0 ]; then
+    pcp_attach_node -d 5 localhost 9898 postgres postgres 1
+fi
 
 psql -U postgres -p 9999 -h $VIP -c "show pool_nodes"
