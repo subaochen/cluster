@@ -40,14 +40,14 @@ service ntp start
 
 
 # 安装和配置jdk
-cp -f rsapps/jdk-6u38-linux-x64.bin /opt
+cp -f rsapps/jdk-6u45-linux-x64.bin /opt
 cd /opt
-./jdk-6u38-linux-x64.bin
+./jdk-6u45-linux-x64.bin
 if [ -h jdk ]; then
     rm jdk;
 fi
-ln -s jdk1.6.0_38 jdk
-rm -f jdk-6u38-linux-x64.bin
+ln -s jdk1.6.0_45 jdk
+rm -f jdk-6u45-linux-x64.bin
 export JAVA_HOME=/opt/jdk
 
 # 安装和配置jboss

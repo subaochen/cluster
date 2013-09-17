@@ -92,9 +92,7 @@ if [ -f /etc/ha.d/ha.cf ]; then
     mv /etc/ha.d/ha.cf /etc/ha.d/ha.cf.bak
 fi
 cat > /etc/ha.d/ha.cf << HA.CF
-debugfile /var/log/ha-debug
-logfile /var/log/ha-log
-logfacility     local0
+use_logd yes
 keepalive 2
 deadtime 30
 warntime 10
@@ -135,6 +133,7 @@ virtual=$VIP:80
 
 LDIRECTORD.CF
 
+cat "1" > /proc/sys/kernel/core_uses_pid
 service heartbeat reload
 
 # 代理，real server能够链接外网
