@@ -26,7 +26,7 @@
 if [ $# -ne 6 ]
 then
     echo "usage:"
-    echo "director.sh master_host master_host_ip slave_host slaver_host_ip VIP master[1|0]"
+    echo "dbsetup.sh master_host master_host_ip slave_host slaver_host_ip VIP master[1|0]"
     exit 1
 fi
 export LANG=C

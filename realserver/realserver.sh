@@ -133,6 +133,10 @@ fi
 
 cp -f default /etc/nginx/sites-available/
 
+mkdir -p /var/www/lvs
+echo "Test Page" >> /var/www/lvs/.lvs.html
+
+
 service nginx restart
 
 # 部署应用

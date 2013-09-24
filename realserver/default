@@ -8,6 +8,10 @@ server {
 
     root /var/www;
 
+    location /lvs {
+        index .lvs.html;
+    }
+
     # for images
     location /imgs {
         index index.html;
