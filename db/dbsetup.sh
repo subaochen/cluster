@@ -403,6 +403,7 @@ black_memqcache_table_list = ''
 
 PGPOOL.CONF
 
+cp -f pcp.conf /usr/local/etc/
 cp -f pgpool_default /etc/default/pgpool
 cp -f pgpool2 /etc/init.d/
 chmod +x /etc/init.d/pgpool2
