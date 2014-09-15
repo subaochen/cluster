@@ -19,7 +19,10 @@
 # 注意事项：
 # 1. 首先设置好服务器的IP地址等 
 # 2. 使用本脚本前需要设置好hosts：db1/db2
-# 3. pgpool 3.3需要事先手工安装好 aptitude install gcc make postgresql-server-dev-9.1; ./configure; make; make install
+# 3. pgpool 3.3需要事先手工安装好。安装步骤如下：
+#   3.1 aptitude install gcc make postgresql-server-dev-9.1
+#   3.2 下载pgpool 3.3 II的最新版本，执行./configure;make;make install 
+#   3.3 That's ALL! 其余配置由下面脚本完成
 # 4. 服务器之间需要设置好无密码访问
 #
 
@@ -82,6 +85,10 @@ service ntp start
 # 构造集群配置文件
 # TODO 如何根据服务器配置修改postgresql.conf中的参数？
 # pg_hba.conf需要根据网络灵活设置
+
+# 如果已经有存在的postgresql则首先停止运行
+service postgresql stop
+
 if [ -f /etc/postgresql/9.1/main/pg_hba.conf ]; then
     mv /etc/postgresql/9.1/main/pg_hba.conf /etc/postgresql/9.1/main/pg_hba.conf.bak
 fi
@@ -155,7 +162,7 @@ if [ $MASTER -eq 0 ]; then
     ln -s /etc/ssl/private/ssl-cert-snakeoil.key /var/lib/postgresql/9.1/main/server.key
 fi
 
-service postgresql restart
+service postgresql start
 
 # 配置pgpool
 # TODO 对端参数的设置？
@@ -417,10 +424,15 @@ sleep 60s
 
 if [ $MASTER -eq 1 ]; then
     pcp_attach_node -d 5 localhost 9898 postgres postgres 0
+    echo "pgpool II slave server added"
 fi
 
 if [ $MASTER -eq 0 ]; then
     pcp_attach_node -d 5 localhost 9898 postgres postgres 1
+    echo "pgpool II master server added"
 fi
 
 psql -U postgres -p 9999 -h $VIP -c "show pool_nodes"
+
+# pgpool 的调试方法
+# pgpool -n可以在终端打印出调试信息 
