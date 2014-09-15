@@ -72,9 +72,9 @@ SOURCES
 aptitude update
 aptitude install -y openssh-server vim ntpdate ntp rsync postgresql-9.1 arping
 
-if [ $MASTER -eq 0 ]; then
-    service postgresql stop
-fi
+#if [ $MASTER -eq 0 ]; then
+#    service postgresql stop
+#fi
 
 
 # 时间同步
@@ -86,8 +86,9 @@ service ntp start
 # TODO 如何根据服务器配置修改postgresql.conf中的参数？
 # pg_hba.conf需要根据网络灵活设置
 
-# 如果已经有存在的postgresql则首先停止运行
+# 如果已经有存在的postgresql/pgpool2则首先停止运行
 service postgresql stop
+service pgpool2 stop
 
 if [ -f /etc/postgresql/9.1/main/pg_hba.conf ]; then
     mv /etc/postgresql/9.1/main/pg_hba.conf /etc/postgresql/9.1/main/pg_hba.conf.bak
